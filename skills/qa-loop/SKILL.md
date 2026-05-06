@@ -1,6 +1,6 @@
 ---
 name: qa-loop
-description: Use when a UI feature has been implemented and needs end-to-end browser validation. Triggers on "verify this", "test in the browser", "does this work", "qa this", or when other UI skills (polish, frontend-design, animate, delight) finish and need a verification gate before reporting completion. Requires the agent-browser CLI.
+description: Use when finishing any UI feature, bug fix, or visible change before reporting completion to the user — qa-loop is the closing gate that proves the feature actually works in a real browser, not just compiles. Also triggers on explicit asks ("verify this", "qa this", "test it in the browser", "does this actually work") and when other UI skills (polish, frontend-design, animate, delight, harden) finish UI work. Requires the agent-browser CLI.
 metadata:
   author: viral
   version: "0.1.0"
