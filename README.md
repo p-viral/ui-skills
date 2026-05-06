@@ -50,6 +50,47 @@ agent-browser install   # one-time Chrome download
 
 **Per-project config** — drop a `.claude/qa-loop.config.md` file in any project to pre-fill the dev server URL, default route, test credentials, or canonical happy path.
 
+**Examples**
+
+Run the skill explicitly after building a feature:
+
+```
+You: I just added the new login form. /qa-loop
+Agent: Describe the happy path for this feature — what should a user be able to do, step by step?
+You: Enter email + password, click Sign In, land on /dashboard with the user's name in the header.
+Agent: → opens browser at http://localhost:3000, snapshots, fills the form, submits...
+        → finds a 500 on /api/auth/login, fixes the missing await in the handler...
+        → re-runs, happy path passes, console clean, network clean.
+        ✓ COMPLETE in 2 cycles.
+```
+
+Pass a specific URL when auto-detection misses your dev server:
+
+```
+/qa-loop http://localhost:5173/checkout
+```
+
+Use it as the closing gate when you're shipping a fix:
+
+```
+You: Fix the bug where the modal doesn't close on Escape, then qa it.
+Agent: → patches the keydown handler in Modal.tsx
+        → invokes qa-loop
+        → opens the page, opens the modal, presses Escape, confirms it closes
+        → checks console + network are clean
+        ✓ COMPLETE
+```
+
+Have another UI skill chain into it automatically:
+
+```
+You: /polish the dashboard
+Agent: → polish runs alignment + spacing fixes
+        → polish invokes qa-loop with the same happy path
+        → qa-loop verifies the dashboard still works end-to-end
+        ✓ Polish + verification complete.
+```
+
 ## Adding a Skill
 
 Each skill is a folder under `skills/` containing a `SKILL.md` with YAML frontmatter (`name`, `description`, optional `metadata`). To contribute, open a PR with the new folder.
