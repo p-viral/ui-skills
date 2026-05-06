@@ -1,6 +1,6 @@
 ---
 name: qa-loop
-description: Use when a UI feature has been implemented and needs browser validation. Triggers on "verify this", "check the browser", "test this feature", "does this work in the browser", or when other skills (polish, frontend-design, animate) complete UI work. Requires agent-browser MCP.
+description: Use when a UI feature has been implemented and needs end-to-end browser validation. Triggers on "verify this", "test in the browser", "does this work", "qa this", or when other UI skills (polish, frontend-design, animate, delight) finish and need a verification gate before reporting completion. Requires the agent-browser CLI.
 metadata:
   author: viral
   version: "0.1.0"
@@ -8,118 +8,187 @@ metadata:
 
 # qa-loop
 
-Mimics a human developer's post-code browser QA pass. Takes a screenshot, navigates to the changed area, interacts with it, watches the console and network, fixes issues found, and repeats until the feature works end-to-end as originally requested.
+Mimics a human developer's post-code browser QA pass. Drive a real Chrome via `agent-browser`, click through the feature you just built, watch the console and network for errors, fix what's broken, and re-verify — until the happy path works end-to-end as originally requested.
 
-## Hard Requirements
+## Hard Requirement: agent-browser
 
-**agent-browser MCP must be available.** If it is not, fail immediately:
+This skill drives Chrome through the [`agent-browser`](https://github.com/vercel-labs/agent-browser) CLI. Verify it is installed before doing anything else:
 
-> "qa-loop requires the agent-browser MCP. Please install it and try again."
+```bash
+agent-browser --version
+```
 
-Do not attempt to proceed without it.
+If the command is not found, **stop immediately** and tell the user:
+
+> "qa-loop requires the agent-browser CLI. Install it with `npm install -g agent-browser && agent-browser install`, then re-run."
+
+Do not attempt any browser work without it.
 
 ## On Invocation
 
-Always ask first:
+Ask the user for the happy path before opening the browser:
 
 > "Describe the happy path for this feature — what should a user be able to do, step by step?"
 
-Use this as the acceptance criteria. The loop does not exit until this journey works.
+This is the acceptance criteria. The loop does not exit until this journey works without console errors or failed network requests.
 
-If invoked by another skill (not the user directly), the calling skill should pass:
+If invoked by another skill (not the user directly), the calling skill must pass:
 - The original feature request
 - The happy path / user journey
 - The URL or route to verify
 
-If called by another skill, suppress step-by-step narration and return only the structured summary at the end.
+When called by another skill, suppress step-by-step narration and return only the final structured summary.
 
 ## Dev Server Detection
 
 Before opening the browser:
 
-1. Check for a running dev server on common ports: `3000`, `5173`, `8080`, `4200`, `4321`, `8000`
-2. Check for a local config file `.claude/qa-loop.config.md` — it may specify the URL or port
+1. Check for a running dev server on common ports: `3000`, `5173`, `8080`, `4200`, `4321`, `8000`, `5000`
+2. Check for `.claude/qa-loop.config.md` in the project — it may specify the URL or route
 3. If no server found, prompt the user:
-   > "No dev server detected. Please start it and let me know when it's running — or pass the URL directly (e.g. `/qa-loop http://localhost:3000/dashboard`)."
-4. Accept a URL as an argument: `/qa-loop http://localhost:5173/some-path`
+   > "No dev server detected. Start your dev server and tell me when it's ready, or pass the URL directly: `/qa-loop http://localhost:3000/dashboard`"
+4. Accept a URL argument: `/qa-loop <url>`
 
-## What to Test
+## Determining What to Test
 
-Determine scope in this priority order:
+In priority order:
 
-1. **Calling skill passed context** — use it
-2. **Git diff of recent changes** — infer the changed feature from modified files
-3. **Ask the user** — "Which feature or page should I focus on?"
+1. **Calling skill context** — if another skill invoked qa-loop, use what it passed
+2. **Recent git diff** — `git diff` and `git diff --cached` reveal what files just changed; map them to UI routes
+3. **Ask the user** — "Which page or feature should I focus on?"
 
-## The QA Pass (Mimic a Human Dev)
+## The QA Pass
 
-For each cycle:
+Each cycle uses `agent-browser` commands. Use `agent-browser batch` to chain steps efficiently.
 
+### 1. Open and capture initial state
+
+```bash
+agent-browser open <url>
+agent-browser wait --load networkidle
+agent-browser snapshot          # accessibility tree with @e refs — best for AI navigation
+agent-browser screenshot        # visual state
 ```
-1. Screenshot — see the current visual state
-2. Navigate — go to the relevant page/route
-3. Interact — click, scroll, fill forms, trigger states
-4. Console — watch for errors and warnings
-5. Network — watch for failed requests, unexpected responses
-6. Edge cases — test invalid inputs, empty states, error paths
-7. Report findings — narrate as you go (unless called by another skill)
+
+### 2. Drive the happy path
+
+Use the `@e` refs from `snapshot` (or semantic locators) to interact:
+
+```bash
+agent-browser click @e3
+agent-browser fill @e7 "test@example.com"
+agent-browser find role button click --name "Submit"
+agent-browser find label "Password" fill "testpass123"
+agent-browser wait --load networkidle
 ```
 
-Think like a human: "I just built this — let me click through it and make sure nothing breaks."
+After each meaningful step, take a screenshot so you can see what happened.
+
+### 3. Check console and errors
+
+```bash
+agent-browser console           # log/info/warn/error messages
+agent-browser errors            # uncaught JavaScript exceptions
+```
+
+Treat any `error`-level console message or uncaught exception as a failure unless it is unrelated to the feature under test.
+
+### 4. Check network
+
+```bash
+agent-browser network requests --status 4xx
+agent-browser network requests --status 5xx
+agent-browser network requests --filter api    # narrow to the app's API calls
+```
+
+For any failed request, drill in:
+
+```bash
+agent-browser network request <requestId>
+```
+
+### 5. Test edge cases
+
+After the happy path passes, exercise at least:
+- Empty / missing input
+- Invalid input (bad email, wrong password, malformed data)
+- The most obvious failure path (unauthenticated access, missing record, etc.)
+
+### 6. Close cleanly
+
+```bash
+agent-browser close
+```
 
 ## Fix-Verify Loop
 
-When issues are found:
+When a cycle finds issues:
 
-1. Fix the issue in code
-2. Re-verify in the browser (take new screenshot, re-interact)
-3. Repeat until the happy path works and no console/network errors remain
-4. **Maximum 5 cycles.** If still failing after 5, stop and surface:
-   - What was fixed
-   - What remains broken and why
-   - Suggested next steps
+1. Identify the root cause from console output, network response bodies, and the screenshot
+2. Fix the issue in code
+3. Reload (`agent-browser open <url>` again or navigate as needed) and re-run the relevant pass
+4. **Maximum 5 cycles.** If still failing after 5, stop and surface a structured "unresolved" report
+
+Clear console between cycles to avoid stale noise:
+
+```bash
+agent-browser console --clear
+agent-browser errors --clear
+```
 
 ## Exit Condition
 
-The loop exits when:
-- The happy path described by the user succeeds end-to-end
-- No console errors or warnings related to the feature
-- No failed network requests
-- Key invalid/edge cases behave correctly
+The loop exits successfully only when **all** of the following are true:
+- The happy path the user described completes end-to-end
+- `agent-browser console` shows no `error`-level messages related to the feature
+- `agent-browser errors` is clean
+- `agent-browser network requests --status 4xx` and `--status 5xx` return nothing relevant to the feature
+- The chosen edge cases behave correctly (graceful errors, no crashes)
 
-## Final Summary (always output this)
+## Final Summary (always output)
 
 ```
 ## QA Summary
 
-**Visual:** [what the UI looks like — layout, styling, responsiveness]
-**Happy path:** [passed / failed — what worked and what didn't]
-**Console:** [clean / N errors found — list them]
-**Network:** [clean / N failures — list them]
-**Edge cases tested:** [list]
-**Cycles:** [N of 5]
-**Status:** COMPLETE ✓ / UNRESOLVED — [what remains]
+**Feature:** <one-line description from the original request>
+**Happy path:** PASSED / FAILED — <what worked, what didn't>
+**Visual:** <layout, styling, anything notable from screenshots>
+**Console:** clean / <N errors> — list each
+**Network:** clean / <N failures> — list each (status, URL, response excerpt)
+**Edge cases tested:** <bullet list with outcomes>
+**Cycles used:** <N> of 5
+**Status:** ✓ COMPLETE  /  ✗ UNRESOLVED — <what remains and why>
 ```
 
-## Project Config Override
+## Per-Project Config
 
-Projects can drop a `.claude/qa-loop.config.md` file to pre-fill context:
+Projects can drop `.claude/qa-loop.config.md` to pre-fill context:
 
 ```markdown
 # qa-loop config
+
 dev_server: http://localhost:5173
 default_route: /dashboard
+
 test_credentials:
   email: test@example.com
   password: testpass123
+
 happy_path: |
-  User logs in, sees dashboard, creates a new item, sees it in the list.
+  1. Sign in with test credentials
+  2. Land on /dashboard
+  3. Click "New Item", fill the form, submit
+  4. See the new item in the list
 ```
 
-## Called by Other Skills
+If this file exists, qa-loop reads it instead of asking the user for the happy path on every invocation.
 
-Skills like `polish`, `frontend-design`, `animate`, and `delight` should invoke `qa-loop` as their final step:
+## When Called by Other Skills
 
-> "Invoke qa-loop to verify the feature works end-to-end before reporting completion."
+Skills like `polish`, `frontend-design`, `animate`, and `delight` should invoke `qa-loop` as their final verification step before reporting completion. They must pass:
 
-Pass the original user request and happy path as context.
+- The original feature request (the user's words)
+- The happy path
+- The URL/route to verify
+
+When invoked this way, qa-loop returns the structured summary only — no narration. The calling skill includes the summary in its own completion message.
