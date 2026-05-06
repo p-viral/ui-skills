@@ -1,6 +1,9 @@
 ---
 name: qa-loop
 description: Use when a UI feature has been implemented and needs browser validation. Triggers on "verify this", "check the browser", "test this feature", "does this work in the browser", or when other skills (polish, frontend-design, animate) complete UI work. Requires agent-browser MCP.
+metadata:
+  author: viral
+  version: "0.1.0"
 ---
 
 # qa-loop
