@@ -91,6 +91,21 @@ Agent: → polish runs alignment + spacing fixes
         ✓ Polish + verification complete.
 ```
 
+### `go`
+
+Splits task execution into two phases: Opus handles planning (deeper reasoning, better architecture decisions), Sonnet handles execution (fast, efficient implementation).
+
+**Triggers**
+
+- User invokes `/go` or says "let's go" with a task ready
+
+**What it does**
+
+1. Spawns a `Plan` subagent with `model: "opus"` to produce the implementation plan
+2. Executes the plan in the current Sonnet session via `superpowers:executing-plans`
+
+**Why two models?** Opus produces higher-quality plans with better architectural reasoning. Once the plan exists, Sonnet is fast and efficient for execution — no need to spend Opus tokens on mechanical implementation steps.
+
 ## Adding a Skill
 
 Each skill is a folder under `skills/` containing a `SKILL.md` with YAML frontmatter (`name`, `description`, optional `metadata`). To contribute, open a PR with the new folder.
