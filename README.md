@@ -93,18 +93,56 @@ Agent: → polish runs alignment + spacing fixes
 
 ### `go`
 
-Splits task execution into two phases: Opus handles planning (deeper reasoning, better architecture decisions), Sonnet handles execution (fast, efficient implementation).
+Keeps Sonnet as the default model and routes planning and architectural questions to Opus. A short Opus planning burst followed by long Sonnet execution costs a fraction of running Opus throughout — Opus is several times more expensive per token.
+
+**Requires** an Opus-capable Claude Code setup (subagent spawning with `model: "opus"`).
 
 **Triggers**
 
-- User invokes `/go` or says "let's go" with a task ready
+- User invokes `/go <task>` or says "let's go" — full plan + execute cycle (Mode A)
+- User says "ask Opus about X", "get Opus's opinion", or "advise me on \<design/architecture topic\>" — one-shot advisory (Mode B)
 
 **What it does**
 
-1. Spawns a `Plan` subagent with `model: "opus"` to produce the implementation plan
-2. Executes the plan in the current Sonnet session via `superpowers:executing-plans`
+*Mode A — plan + execute:*
 
-**Why two models?** Opus produces higher-quality plans with better architectural reasoning. Once the plan exists, Sonnet is fast and efficient for execution — no need to spend Opus tokens on mechanical implementation steps.
+1. Gathers codebase context on Sonnet
+2. Spawns a `Plan` subagent with `model: "opus"` — passes task, constraints, and context
+3. Shows the Opus plan to the user for review before executing
+4. Executes the plan step-by-step on Sonnet via `superpowers:executing-plans`
+5. Verifies on Sonnet via `superpowers:verification-before-completion`
+6. Runs `qa-loop` for UI work
+
+*Mode B — one-shot advisory:*
+
+Spawns a `general-purpose` subagent with `model: "opus"`, packages the question with relevant code and constraints from the current conversation, and returns Opus's answer verbatim. Sonnet resumes the task.
+
+**Examples**
+
+Start a feature with best-quality planning:
+
+```
+You: /go add dark mode support to the settings page
+Agent: Using /go — Opus plans, Sonnet executes.
+       → reads settings page files, theme config, existing patterns (Sonnet)
+       → spawns Opus Plan subagent...
+       Here's the Opus plan. Proceed, or adjust anything first?
+       [plan: 8 ordered steps, files listed, test strategy included]
+You: Looks good, go.
+Agent: → executes steps 1-8 on Sonnet
+       → verifies via qa-loop
+       ✓ COMPLETE
+```
+
+Get Opus's opinion mid-task:
+
+```
+You: Ask Opus whether I should store user preferences in localStorage or a DB table.
+Agent: → spawns Opus with the question + current schema/code context
+       Opus says: [architectural recommendation]
+Agent: → continues implementation on Sonnet
+       ✓ ADVICE APPLIED
+```
 
 ## Adding a Skill
 
